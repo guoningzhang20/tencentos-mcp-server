@@ -40,24 +40,31 @@ cd tencentos-mcp-server
 
 # 安装
 pip install .
+```
 
-# 运行 — stdio 模式（默认，供 MCP 客户端 subprocess 拉起）
+安装完成后，根据使用场景选择运行方式：
+
+```bash
+# ① stdio 模式（默认）— 由 MCP 客户端（IDE）自动拉起，不要手动执行
+#    配置方法见下方「IDE 配置」章节
 tencentos-mcp-server
 
-# 运行 — SSE 模式（HTTP 长连接，适合远程/多客户端）
-tencentos-mcp-server --transport sse --port 8000
+# ② SSE 模式 — 启动 HTTP 服务，适合远程连接或多客户端共享
+tencentos-mcp-server --transport sse --host 0.0.0.0 --port 8000
 
-# 运行 — Streamable HTTP 模式（MCP 最新推荐协议）
-tencentos-mcp-server --transport streamable-http --port 8000
+# ③ Streamable HTTP 模式 — MCP 最新推荐协议
+tencentos-mcp-server --transport streamable-http --host 0.0.0.0 --port 8000
 ```
+
+> 💡 **注意**：stdio 模式通过 stdin/stdout 与 MCP 客户端通信，直接在终端执行会看到进程"卡住"等待输入——这是正常行为，按 `Ctrl+C` 退出。如需手动测试，请使用 SSE 或 Streamable HTTP 模式。
 
 **三种传输模式对比：**
 
 | 模式 | 启动方式 | 适用场景 |
 |------|---------|---------|
-| `stdio` | MCP 客户端自动拉起进程 | 本地 IDE 插件（CodeBuddy / Cursor） |
-| `sse` | 启动 HTTP 服务，客户端连接 `http://host:port/sse` | 远程服务器、多客户端共享 |
-| `streamable-http` | 启动 HTTP 服务，客户端连接 `http://host:port/mcp` | MCP 协议最新标准，推荐新项目使用 |
+| `stdio` | MCP 客户端（IDE）自动拉起进程 | 本地 IDE 插件（CodeBuddy / Cursor），**无需手动运行** |
+| `sse` | 手动启动 HTTP 服务，客户端连接 `http://host:port/sse` | 远程服务器、多客户端共享 |
+| `streamable-http` | 手动启动 HTTP 服务，客户端连接 `http://host:port/mcp` | MCP 协议最新标准，推荐新项目使用 |
 
 ### 方式二：容器运行（推荐生产使用）
 
