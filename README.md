@@ -31,11 +31,15 @@
 
 ## 🚀 快速开始
 
-### 方式一：pip 安装（开发 / 本地调试）
+### 方式一：源码安装
 
 ```bash
+# 克隆仓库
+git clone https://github.com/guoningzhang20/tencentos-mcp-server.git
+cd tencentos-mcp-server
+
 # 安装
-pip install -e .
+pip install .
 
 # 运行（stdio 模式，供 MCP 客户端连接）
 tencentos-mcp-server
