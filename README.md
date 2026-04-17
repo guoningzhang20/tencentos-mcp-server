@@ -41,12 +41,23 @@ cd tencentos-mcp-server
 # 安装
 pip install .
 
-# 运行（stdio 模式，供 MCP 客户端连接）
+# 运行 — stdio 模式（默认，供 MCP 客户端 subprocess 拉起）
 tencentos-mcp-server
 
-# 或通过 Python module
-python -m tencentos_mcp_server
+# 运行 — SSE 模式（HTTP 长连接，适合远程/多客户端）
+tencentos-mcp-server --transport sse --port 8000
+
+# 运行 — Streamable HTTP 模式（MCP 最新推荐协议）
+tencentos-mcp-server --transport streamable-http --port 8000
 ```
+
+**三种传输模式对比：**
+
+| 模式 | 启动方式 | 适用场景 |
+|------|---------|---------|
+| `stdio` | MCP 客户端自动拉起进程 | 本地 IDE 插件（CodeBuddy / Cursor） |
+| `sse` | 启动 HTTP 服务，客户端连接 `http://host:port/sse` | 远程服务器、多客户端共享 |
+| `streamable-http` | 启动 HTTP 服务，客户端连接 `http://host:port/mcp` | MCP 协议最新标准，推荐新项目使用 |
 
 ### 方式二：容器运行（推荐生产使用）
 
@@ -166,6 +177,9 @@ tencentos-mcp-server/
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
+| `TENCENTOS_MCP_TRANSPORT` | 传输协议（stdio / sse / streamable-http） | `stdio` |
+| `TENCENTOS_MCP_BIND_HOST` | SSE/HTTP 监听地址 | `0.0.0.0` |
+| `TENCENTOS_MCP_BIND_PORT` | SSE/HTTP 监听端口 | `8000` |
 | `TENCENTOS_MCP_HOST` | 目标主机 IP（空 = 本地执行） | — |
 | `TENCENTOS_MCP_USER` | SSH 用户名 | `root` |
 | `TENCENTOS_MCP_SSH_KEY_PATH` | SSH 私钥路径 | `~/.ssh/id_rsa` |
