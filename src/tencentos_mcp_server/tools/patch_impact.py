@@ -23,6 +23,7 @@ from mcp.types import ToolAnnotations
 from tencentos_mcp_server.audit import log_tool_call
 from tencentos_mcp_server.executor import run_cmd
 from tencentos_mcp_server.models import ImpactSummary, PatchDetail, PatchImpactReport
+from tencentos_mcp_server.sanitize import safe_name
 from tencentos_mcp_server.server import mcp
 
 CVE_DB_URL = "https://mirrors.tencent.com/tlinux/errata/cve.xml"
@@ -278,6 +279,7 @@ async def check_patch_dependencies(package_name: str) -> dict:
     Args:
         package_name: Package to analyze, e.g. 'openssl', 'kernel'.
     """
+    package_name = safe_name(package_name, "package_name")
     # What depends on this package
     rdeps = await run_cmd(f"rpm -q --whatrequires {package_name} 2>/dev/null || echo 'Not installed'")
     # What this package requires

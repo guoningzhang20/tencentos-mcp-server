@@ -7,6 +7,7 @@ from mcp.types import ToolAnnotations
 from tencentos_mcp_server.audit import log_tool_call
 from tencentos_mcp_server.executor import run_cmd
 from tencentos_mcp_server.models import LogEntry
+from tencentos_mcp_server.sanitize import safe_name, safe_positive_int, safe_priority, safe_time_expr
 from tencentos_mcp_server.server import mcp
 
 
@@ -34,6 +35,12 @@ async def query_logs(
         since: Time range start, e.g. '1 hour ago', '2026-04-17', 'today'. Default '1 hour ago'.
         lines: Max number of log entries to return. Default 50.
     """
+    if unit:
+        unit = safe_name(unit, "unit")
+    priority = safe_priority(priority)
+    since = safe_time_expr(since, "since")
+    lines = safe_positive_int(lines, "lines", max_val=1000)
+
     cmd_parts = ["journalctl", "--no-pager", "-o", "short-iso"]
     if unit:
         cmd_parts.append(f"-u {unit}")

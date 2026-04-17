@@ -21,6 +21,7 @@ from tencentos_mcp_server.models import (
     ComplianceStatus,
     UserActivity,
 )
+from tencentos_mcp_server.sanitize import safe_positive_int
 from tencentos_mcp_server.server import mcp
 
 
@@ -267,6 +268,7 @@ async def audit_operations(days: int = 7) -> AuditReport:
     Args:
         days: Look-back period in days. Default 7.
     """
+    days = safe_positive_int(days, "days", max_val=365)
     # Collect from multiple sources
     logins = await run_cmd(f"last -n 50 2>/dev/null || echo ''")
     failed_logins = await run_cmd("lastb -n 20 2>/dev/null || echo ''")
@@ -336,6 +338,7 @@ async def get_privileged_operations(days: int = 7) -> list[AuditEntry]:
     Args:
         days: Look-back period in days. Default 7.
     """
+    days = safe_positive_int(days, "days", max_val=365)
     sudo_logs = await run_cmd(
         f'journalctl _COMM=sudo --since "{days} days ago" --no-pager -n 200 2>/dev/null || echo ""'
     )

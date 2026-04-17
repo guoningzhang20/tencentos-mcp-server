@@ -9,6 +9,7 @@ from mcp.types import ToolAnnotations
 from tencentos_mcp_server.audit import log_tool_call
 from tencentos_mcp_server.executor import run_cmd
 from tencentos_mcp_server.models import NetworkConnection, NetworkInterface
+from tencentos_mcp_server.sanitize import safe_protocol
 from tencentos_mcp_server.server import mcp
 
 
@@ -66,6 +67,7 @@ async def get_network_connections(protocol: str = "all") -> list[NetworkConnecti
     Args:
         protocol: 'tcp', 'udp', or 'all'. Default 'all'.
     """
+    protocol = safe_protocol(protocol)
     flag = {"tcp": "-tnp", "udp": "-unp", "all": "-tulnp"}.get(protocol, "-tulnp")
     result = await run_cmd(f"ss {flag} 2>/dev/null || netstat {flag} 2>/dev/null")
     connections: list[NetworkConnection] = []

@@ -7,6 +7,7 @@ from mcp.types import ToolAnnotations
 from tencentos_mcp_server.audit import log_tool_call
 from tencentos_mcp_server.executor import run_cmd
 from tencentos_mcp_server.models import ProcessInfo
+from tencentos_mcp_server.sanitize import safe_positive_int, safe_sort_by
 from tencentos_mcp_server.server import mcp
 
 
@@ -27,6 +28,8 @@ async def list_processes(sort_by: str = "cpu", top_n: int = 20) -> list[ProcessI
         sort_by: Sort field — 'cpu' or 'mem'. Default 'cpu'.
         top_n: Number of processes to return. Default 20.
     """
+    sort_by = safe_sort_by(sort_by)
+    top_n = safe_positive_int(top_n, "top_n", max_val=500)
     sort_flag = "-pcpu" if sort_by == "cpu" else "-pmem"
     result = await run_cmd(
         f"ps aux --sort={sort_flag} 2>/dev/null | head -{top_n + 1}"

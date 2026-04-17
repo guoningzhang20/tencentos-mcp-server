@@ -7,6 +7,7 @@ from mcp.types import ToolAnnotations
 from tencentos_mcp_server.audit import log_tool_call
 from tencentos_mcp_server.executor import run_cmd
 from tencentos_mcp_server.models import ServiceInfo
+from tencentos_mcp_server.sanitize import safe_name, safe_service_state
 from tencentos_mcp_server.server import mcp
 
 
@@ -23,6 +24,7 @@ async def get_service_status(service_name: str) -> dict:
     Args:
         service_name: The service name, e.g. 'sshd', 'nginx'.
     """
+    service_name = safe_name(service_name, "service_name")
     result = await run_cmd(f"systemctl status {service_name} --no-pager 2>/dev/null || echo 'Service not found'")
     is_active = await run_cmd(f"systemctl is-active {service_name} 2>/dev/null || echo 'unknown'")
     is_enabled = await run_cmd(f"systemctl is-enabled {service_name} 2>/dev/null || echo 'unknown'")
@@ -47,6 +49,7 @@ async def list_services(state: str = "") -> list[ServiceInfo]:
     Args:
         state: Filter by state — 'running', 'failed', 'inactive', or '' for all.
     """
+    state = safe_service_state(state)
     state_filter = f"--state={state}" if state else ""
     result = await run_cmd(
         f"systemctl list-units --type=service {state_filter} --no-pager --plain --no-legend 2>/dev/null"

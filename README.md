@@ -183,13 +183,50 @@ tencentos-mcp-server/
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `TENCENTOS_MCP_TRANSPORT` | 传输协议（stdio / sse / streamable-http） | `stdio` |
-| `TENCENTOS_MCP_BIND_HOST` | SSE/HTTP 监听地址 | `0.0.0.0` |
+| `TENCENTOS_MCP_BIND_HOST` | SSE/HTTP 监听地址 | `127.0.0.1` |
 | `TENCENTOS_MCP_BIND_PORT` | SSE/HTTP 监听端口 | `8000` |
+| `TENCENTOS_MCP_API_KEY` | SSE/HTTP 模式的 Bearer Token 认证密钥 | — |
 | `TENCENTOS_MCP_HOST` | 目标主机 IP（空 = 本地执行） | — |
 | `TENCENTOS_MCP_USER` | SSH 用户名 | `root` |
 | `TENCENTOS_MCP_SSH_KEY_PATH` | SSH 私钥路径 | `~/.ssh/id_rsa` |
 | `TENCENTOS_MCP_SSH_PORT` | SSH 端口 | `22` |
 | `TENCENTOS_MCP_LOG_LEVEL` | 日志级别 | `INFO` |
+
+## 🔒 安全
+
+### 设计原则
+
+- **全只读**：所有 26 个工具均标记 `readOnlyHint=True`，不执行任何修改操作
+- **输入清理**：所有用户输入参数经过 `sanitize.py` 白名单验证，防止命令注入
+- **审计日志**：每次工具调用自动记录（可通过 `TENCENTOS_MCP_AUDIT` 开关）
+- **容器非 root**：Containerfile 中以 `mcp` 用户运行
+
+### HTTP 模式认证
+
+SSE 和 Streamable HTTP 模式支持 **Bearer Token 认证**：
+
+```bash
+# 启动时指定 API Key
+TENCENTOS_MCP_API_KEY=your-secret-key tencentos-mcp-server --transport sse --port 8000
+
+# 或通过命令行参数
+tencentos-mcp-server --transport streamable-http --api-key your-secret-key
+```
+
+客户端连接时需要在 HTTP Header 中携带：
+```
+Authorization: Bearer your-secret-key
+```
+
+未配置 API Key 时，服务器会显示安全警告但仍可启动（便于开发调试）。
+
+### 安全建议
+
+| 场景 | 建议 |
+|------|------|
+| **本地开发** | 使用 stdio 模式，无需额外安全配置 |
+| **内网部署** | 使用 SSE/HTTP + API Key，监听 127.0.0.1 |
+| **公网暴露** | ⚠️ 强烈建议：反向代理 (nginx) + TLS + API Key |
 
 ## 📄 协议
 

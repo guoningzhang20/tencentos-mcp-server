@@ -27,6 +27,7 @@ from tencentos_mcp_server.models import (
     PatchHistoryReport,
     PatchTransaction,
 )
+from tencentos_mcp_server.sanitize import safe_positive_int
 from tencentos_mcp_server.server import mcp
 
 CVE_DB_URL = "https://mirrors.tencent.com/tlinux/errata/cve.xml"
@@ -196,6 +197,7 @@ async def get_patch_history(last_n: int = 20) -> PatchHistoryReport:
     Args:
         last_n: Number of recent transactions to show. Default 20.
     """
+    last_n = safe_positive_int(last_n, "last_n", max_val=100)
     # Get history list
     history = await run_cmd(f"dnf history list 2>/dev/null || yum history list 2>/dev/null || echo ''")
     parsed = _parse_history_list(history.stdout)
