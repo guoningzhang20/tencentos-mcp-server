@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "tencentos-local": {
+      "type": "stdio",
+      "command": "tencentos-mcp-server",
+      "env": {},
+      "description": "TencentOS MCP Server — 本地模式（直接在当前机器上执行）"
+    },
+    "tencentos-remote": {
+      "type": "stdio",
+      "command": "tencentos-mcp-server",
+      "env": {
+        "TENCENTOS_MCP_HOST": "192.168.1.100",
+        "TENCENTOS_MCP_USER": "ops",
+        "TENCENTOS_MCP_SSH_KEY_PATH": "~/.ssh/id_ed25519",
+        "TENCENTOS_MCP_SSH_PORT": "22"
+      },
+      "description": "TencentOS MCP Server — SSH 远程模式"
+    },
+    "tencentos-container": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-v", "${env:HOME}/.ssh:/root/.ssh:ro",
+        "tencentos-mcp-server:latest"
+      ],
+      "env": {
+        "TENCENTOS_MCP_HOST": "192.168.1.100",
+        "TENCENTOS_MCP_USER": "ops",
+        "TENCENTOS_MCP_SSH_KEY_PATH": "/root/.ssh/id_ed25519"
+      },
+      "description": "TencentOS MCP Server — 容器模式（推荐生产使用）"
+    }
+  }
+}
