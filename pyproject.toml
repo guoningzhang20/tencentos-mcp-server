@@ -23,7 +23,6 @@ dependencies = [
     "fastmcp>=2.14.4,<3",
     "asyncssh[bcrypt]>=2.22.0",
     "pydantic>=2.12.0",
-    "pydantic-settings>=2.12.0",
 ]
 
 [project.scripts]

@@ -19,7 +19,7 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 
 # Install the package
-RUN python3 -m pip install --no-cache-dir -e .
+RUN python3 -m pip install --no-cache-dir .
 
 # Switch to non-root
 USER mcp

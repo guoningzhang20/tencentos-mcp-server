@@ -81,7 +81,7 @@ def safe_time_expr(value: str, field: str = "time") -> str:
     """Validate a time expression for journalctl --since / --until.
 
     Accepts: ISO dates, relative expressions ("2 hours ago"), "today", "yesterday".
-    Blocks: shell metacharacters that could be used for injection.
+    Rejects: anything that doesn't match known time patterns.
     """
     value = value.strip()
     if not value:
@@ -90,14 +90,11 @@ def safe_time_expr(value: str, field: str = "time") -> str:
         raise ValueError(f"{field} too long (max 64 chars)")
     if _TIME_LIKE.match(value):
         return value
-    # Extra safety: reject any shell-dangerous characters
-    dangerous = set(";|&`$(){}[]!#\\'\">")
-    found = dangerous & set(value)
-    if found:
-        raise ValueError(
-            f"Invalid {field}: '{value}' contains forbidden characters: {found}"
-        )
-    return value
+    # Reject anything that doesn't match the whitelist
+    raise ValueError(
+        f"Invalid {field}: '{value}'. "
+        f"Accepted formats: ISO date (2026-04-17), relative (2 hours ago), today, yesterday, now."
+    )
 
 
 def safe_positive_int(value: int, field: str = "number", max_val: int = 10000) -> int:

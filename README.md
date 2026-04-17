@@ -10,20 +10,20 @@
 
 | 模块 | 工具 | 说明 |
 |------|------|------|
-| **system_info** | `get_system_information` / `get_cpu_information` / `get_memory_information` | OS、内核、CPU、内存 |
-| **processes** | `list_processes` / `find_process` | 进程列表与搜索 |
+| **system_info** | `get_system_info` / `get_cpu_info` / `get_memory_info` / `get_disk_usage` | OS、内核、CPU、内存、磁盘 |
+| **processes** | `list_processes` | 进程列表（按 CPU/内存排序） |
 | **services** | `list_services` / `get_service_status` | systemd 服务状态 |
-| **network** | `get_network_interfaces` / `get_network_connections` / `check_port` | 网络接口、连接、端口 |
-| **storage** | `get_disk_usage` / `get_block_devices` | 磁盘与块设备 |
-| **logs** | `query_journal_logs` | journalctl 日志查询 |
+| **network** | `get_network_info` / `get_network_connections` | 网络接口、连接 |
+| **storage** | `get_block_devices` | 块设备 |
+| **logs** | `query_logs` | journalctl 日志查询 |
 
 ### 增强层 — 诊断与建议（TencentOS 独有）
 
 | 模块 | 工具 | 解决的问题 |
 |------|------|-----------|
-| **① 补丁影响评估** | `assess_patch_impact` / `list_security_advisories` / `check_restart_requirements` | 打补丁前评估对业务的影响，推荐修复策略 |
+| **① 补丁影响评估** | `assess_patch_impact` / `list_security_advisories` / `check_patch_dependencies` | 打补丁前评估对业务的影响，推荐修复策略 |
 | **② 故障诊断** | `diagnose_system` / `get_error_timeline` / `check_resource_pressure` | 多源日志关联分析，读懂机器状态 |
-| **③ 合规举证** | `audit_operations` / `check_compliance` / `get_user_activities` | 谁在什么时候操作了什么，审计取证 |
+| **③ 合规举证** | `audit_operations` / `check_compliance` / `get_privileged_operations` | 谁在什么时候操作了什么，审计取证 |
 | **④ 补丁版本管理** | `get_patch_history` / `compare_patch_status` / `get_kernel_history` | 补丁履历 + 版本 Gap 分析 + CVE 交叉比对 |
 | **⑤ 系统配置调优** | `analyze_system_tuning` / `get_workload_profile` / `check_kernel_parameters` | 负载画像 + 参数最佳实践对比 + 调优建议 |
 
@@ -63,7 +63,7 @@ tencentos-mcp-server --transport streamable-http --port 8000
 
 ```bash
 # 构建
-docker build -t tencentos-mcp-server:latest .
+docker build -f Containerfile -t tencentos-mcp-server:latest .
 
 # 运行（本地模式）
 docker run -i --rm tencentos-mcp-server:latest
@@ -190,13 +190,15 @@ tencentos-mcp-server/
 | `TENCENTOS_MCP_USER` | SSH 用户名 | `root` |
 | `TENCENTOS_MCP_SSH_KEY_PATH` | SSH 私钥路径 | `~/.ssh/id_rsa` |
 | `TENCENTOS_MCP_SSH_PORT` | SSH 端口 | `22` |
+| `TENCENTOS_MCP_SSH_KNOWN_HOSTS` | SSH known_hosts（auto/none/路径） | `auto` |
+| `TENCENTOS_MCP_AUDIT` | 启用工具调用审计日志 | `true` |
 | `TENCENTOS_MCP_LOG_LEVEL` | 日志级别 | `INFO` |
 
 ## 🔒 安全
 
 ### 设计原则
 
-- **全只读**：所有 26 个工具均标记 `readOnlyHint=True`，不执行任何修改操作
+- **全只读**：所有 25 个工具均标记 `readOnlyHint=True`，不执行任何修改操作
 - **输入清理**：所有用户输入参数经过 `sanitize.py` 白名单验证，防止命令注入
 - **审计日志**：每次工具调用自动记录（可通过 `TENCENTOS_MCP_AUDIT` 开关）
 - **容器非 root**：Containerfile 中以 `mcp` 用户运行

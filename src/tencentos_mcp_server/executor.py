@@ -41,11 +41,13 @@ class CommandExecutor:
         user: str = "root",
         ssh_key_path: Optional[str] = None,
         ssh_port: int = 22,
+        ssh_known_hosts: Optional[str] = "auto",
     ):
         self.host = host
         self.user = user
         self.ssh_key_path = ssh_key_path
         self.ssh_port = ssh_port
+        self.ssh_known_hosts = ssh_known_hosts
 
     @classmethod
     def from_config(cls) -> "CommandExecutor":
@@ -55,6 +57,7 @@ class CommandExecutor:
             user=cfg.user,
             ssh_key_path=cfg.ssh_key_path,
             ssh_port=cfg.ssh_port,
+            ssh_known_hosts=cfg.ssh_known_hosts,
         )
 
     @property
@@ -90,11 +93,19 @@ class CommandExecutor:
         )
 
     async def _run_remote(self, command: str, timeout: int) -> ExecutionResult:
+        # Resolve known_hosts setting: "auto" = default, "none" = disable, path = use file
+        kh = self.ssh_known_hosts
+        if kh and kh.lower() == "none":
+            known_hosts = None
+        elif kh and kh.lower() != "auto":
+            known_hosts = kh
+        else:
+            known_hosts = ()  # asyncssh default: use ~/.ssh/known_hosts
         connect_kwargs: dict = {
             "host": self.host,
             "port": self.ssh_port,
             "username": self.user,
-            "known_hosts": None,
+            "known_hosts": known_hosts,
         }
         if self.ssh_key_path:
             connect_kwargs["client_keys"] = [self.ssh_key_path]
@@ -116,8 +127,13 @@ async def run_cmd(command: str, timeout: int = 30) -> ExecutionResult:
 async def run_commands(**commands: str) -> dict[str, ExecutionResult]:
     """Run multiple commands concurrently. Returns {name: result}."""
     executor = CommandExecutor.from_config()
-    tasks = {name: executor.run(cmd) for name, cmd in commands.items()}
-    results = {}
-    for name, coro in tasks.items():
-        results[name] = await coro
+    names = list(commands.keys())
+    coros = [executor.run(commands[n]) for n in names]
+    results_list = await asyncio.gather(*coros, return_exceptions=True)
+    results: dict[str, ExecutionResult] = {}
+    for name, result in zip(names, results_list):
+        if isinstance(result, Exception):
+            results[name] = ExecutionResult(returncode=-1, stdout="", stderr=str(result))
+        else:
+            results[name] = result
     return results

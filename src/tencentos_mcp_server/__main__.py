@@ -80,7 +80,6 @@ def _setup_auth_middleware(api_key: str) -> None:
     We monkey-patch mcp.run to wrap the ASGI app with auth middleware.
     """
     from starlette.middleware import Middleware
-    from starlette.requests import Request
     from starlette.responses import JSONResponse
     from starlette.types import ASGIApp, Receive, Scope, Send
 
@@ -92,17 +91,23 @@ def _setup_auth_middleware(api_key: str) -> None:
             self.expected_key = expected_key
 
         async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-            if scope["type"] == "http":
-                request = Request(scope)
-                auth = request.headers.get("authorization", "")
+            if scope["type"] in ("http", "websocket"):
+                # Extract Authorization header from scope
+                headers = dict(scope.get("headers", []))
+                auth = headers.get(b"authorization", b"").decode()
                 if not auth.startswith("Bearer ") or auth[7:] != self.expected_key:
-                    response = JSONResponse(
-                        {"error": "Unauthorized", "detail": "Invalid or missing Bearer token"},
-                        status_code=401,
-                        headers={"WWW-Authenticate": "Bearer"},
-                    )
-                    await response(scope, receive, send)
-                    return
+                    if scope["type"] == "http":
+                        response = JSONResponse(
+                            {"error": "Unauthorized", "detail": "Invalid or missing Bearer token"},
+                            status_code=401,
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+                        await response(scope, receive, send)
+                        return
+                    else:
+                        # WebSocket: reject by closing before accept
+                        await send({"type": "websocket.close", "code": 4001, "reason": "Unauthorized"})
+                        return
             await self.app(scope, receive, send)
 
     # Monkey-patch: wrap mcp.run to inject middleware

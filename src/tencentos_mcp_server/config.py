@@ -21,6 +21,9 @@ class ServerConfig:
     ssh_port: int = field(
         default_factory=lambda: int(os.environ.get("TENCENTOS_MCP_SSH_PORT", "22"))
     )
+    ssh_known_hosts: Optional[str] = field(
+        default_factory=lambda: os.environ.get("TENCENTOS_MCP_SSH_KNOWN_HOSTS", "auto")
+    )
     log_level: str = field(default_factory=lambda: os.environ.get("TENCENTOS_MCP_LOG_LEVEL", "INFO"))
     audit_enabled: bool = field(
         default_factory=lambda: os.environ.get("TENCENTOS_MCP_AUDIT", "true").lower() in ("true", "1", "yes")

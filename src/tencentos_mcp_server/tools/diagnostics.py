@@ -15,6 +15,7 @@ from mcp.types import ToolAnnotations
 
 from tencentos_mcp_server.audit import log_tool_call
 from tencentos_mcp_server.executor import run_cmd
+from tencentos_mcp_server.sanitize import safe_positive_int
 from tencentos_mcp_server.models import (
     DiagnosticReport,
     ErrorEvent,
@@ -244,6 +245,7 @@ async def diagnose_system(hours: int = 1) -> DiagnosticReport:
     Args:
         hours: Look-back window in hours. Default 1.
     """
+    hours = safe_positive_int(hours, "hours", max_val=720)
     # 1. Collect from multiple sources
     journal = await run_cmd(
         f'journalctl -p err,warning --since "{hours} hour ago" --no-pager -o short-iso 2>/dev/null | tail -200'
@@ -341,6 +343,7 @@ async def get_error_timeline(hours: int = 1) -> list[ErrorEvent]:
     Args:
         hours: Look-back window in hours. Default 1.
     """
+    hours = safe_positive_int(hours, "hours", max_val=720)
     journal = await run_cmd(
         f'journalctl -p err --since "{hours} hour ago" --no-pager -o short-iso 2>/dev/null | tail -100'
     )
