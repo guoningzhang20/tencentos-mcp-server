@@ -256,9 +256,10 @@ async def _check_compliance_impl() -> ComplianceStatus:
     description=(
         "Query operation audit trail: who logged in, who ran sudo, what was changed. "
         "Aggregates data from auditd, /var/log/secure, last/lastb, and sudo journal. "
-        "Marks high-risk operations and provides per-user activity summary."
+        "Marks high-risk operations and provides per-user activity summary. "
+        "NOTE: This is for compliance/audit purposes, NOT for vulnerability or patch scanning."
     ),
-    tags={"compliance", "audit", "security", "tencentos"},
+    tags={"compliance", "audit", "tencentos"},
     annotations=ToolAnnotations(readOnlyHint=True),
 )
 @log_tool_call
@@ -310,11 +311,13 @@ async def audit_operations(days: int = 7) -> AuditReport:
 @mcp.tool(
     title="Check compliance",
     description=(
-        "Check system security compliance: auditd status, audit rules count, "
+        "Check system audit and access-control compliance: auditd status, audit rules count, "
         "password policy, SSH root login config, failed login attempts. "
-        "Returns a compliance score (0-100) and list of findings."
+        "Returns a compliance score (0-100) and list of findings. "
+        "NOTE: This checks audit/access configuration, NOT software vulnerabilities or CVEs. "
+        "For vulnerability scanning, use assess_patch_impact or compare_patch_status instead."
     ),
-    tags={"compliance", "security", "tencentos"},
+    tags={"compliance", "audit", "tencentos"},
     annotations=ToolAnnotations(readOnlyHint=True),
 )
 @log_tool_call
