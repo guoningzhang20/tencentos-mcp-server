@@ -113,6 +113,198 @@ docker run -i --rm \
 
 完整的配置示例参见 [`mcp-config-example.json`](./mcp-config-example.json)。
 
+## 🌐 远程部署完整教程（Streamable HTTP）
+
+如果你希望把 MCP Server 部署到一台独立的 TencentOS Server 上，让多个 AI 客户端远程连接，按以下步骤操作。
+
+### 架构概览
+
+```
+ ┌───────────────┐   HTTPS/HTTP + Bearer Token    ┌──────────────────────┐
+ │  AI 客户端     │ ─────────────────────────────► │ TencentOS MCP Server │
+ │ (CodeBuddy /  │        POST /mcp                │  (独立部署的机器)     │
+ │  Cursor /     │ ◄───────────────────────────── │  监听 0.0.0.0:8000   │
+ │  自研 Agent)  │        JSON-RPC Response        │                      │
+ └───────────────┘                                 └──────────┬───────────┘
+                                                              │ 本地执行只读命令
+                                                              ▼
+                                                   ┌──────────────────────┐
+                                                   │ TencentOS Server 4   │
+                                                   │ dnf / systemctl /    │
+                                                   │ journalctl / /proc   │
+                                                   └──────────────────────┘
+```
+
+### Step 1 — 在服务器上安装
+
+```bash
+# 拉代码
+git clone https://github.com/guoningzhang20/tencentos-mcp-server.git
+cd tencentos-mcp-server
+
+# 安装到系统（也可以用 venv）
+pip install .
+```
+
+安装完成后，系统中会多一个可执行命令 `/usr/local/bin/tencentos-mcp-server`。
+
+### Step 2 — 生成 API Key
+
+```bash
+openssl rand -hex 32
+# 输出示例：a3f8e2d9c1b4f7e6d5c4b3a2...（64 位随机 hex）
+```
+
+这个 key 就是客户端连接时的"暗号"，**服务端启动参数和客户端配置必须完全一致**。
+
+### Step 3 — 启动服务
+
+```bash
+tencentos-mcp-server \
+  --transport streamable-http \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --api-key a3f8e2d9c1b4f7e6d5c4b3a2...
+```
+
+**参数解释：**
+
+| 参数 | 作用 | 说明 |
+|------|------|------|
+| `--transport streamable-http` | 传输协议 | MCP 最新推荐协议，走标准 HTTP |
+| `--host 0.0.0.0` | 监听地址 | `0.0.0.0` = 所有网卡都接受连接；`127.0.0.1` = 仅本机 |
+| `--port 8000` | 监听端口 | 可自选未被占用的端口 |
+| `--api-key` | 认证密钥 | 配合 `--host 0.0.0.0` 使用，防止任何人都能调用 |
+
+**服务启动后，终端会"卡住"等待请求 —— 这是正常的。** 端点地址为：
+
+```
+http://<你的服务器 IP>:8000/mcp
+```
+
+### Step 4 — 开放防火墙
+
+TencentOS Server 4 默认启用 firewalld：
+
+```bash
+firewall-cmd --permanent --add-port=8000/tcp
+firewall-cmd --reload
+```
+
+如果机器在腾讯云，还需要在**云控制台的安全组**中放行 8000 端口。
+
+### Step 5 — 验证服务可用
+
+在服务器本机开另一个终端：
+
+```bash
+# 无 Key，应返回 401
+curl -i http://127.0.0.1:8000/mcp
+
+# 带 Key，应返回 MCP 协议响应
+curl -i -X POST http://127.0.0.1:8000/mcp \
+  -H "Authorization: Bearer a3f8e2d9c1b4f7e6d5c4b3a2..." \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
+```
+
+### Step 6 — 配置 AI 客户端
+
+在 AI 客户端的 MCP 配置中添加：
+
+```json
+{
+  "mcpServers": {
+    "tencentos": {
+      "type": "http",
+      "url": "http://<你的服务器 IP>:8000/mcp",
+      "headers": {
+        "Authorization": "Bearer a3f8e2d9c1b4f7e6d5c4b3a2..."
+      }
+    }
+  }
+}
+```
+
+**三个字段必须核对：**
+
+- `url`：服务器 IP + 端口 + `/mcp` 路径（路径固定，不能改）
+- `Authorization`：`Bearer ` 六个字母 + 一个空格 + API Key（大小写敏感，不可省略 `Bearer `）
+- `type`：部分客户端需要显式声明为 `"http"`，否则会按 stdio 去拉子进程
+
+**保存配置 → 重启客户端**，工具列表里应能看到 `tencentos` 分组下的 26 个工具。
+
+### Step 7 — 常见问题排查
+
+| 现象 | 原因 | 解决 |
+|------|------|------|
+| 客户端报 `spawn tencentos ENOENT` | 配置里缺 `type`，被当作 stdio 处理 | 添加 `"type": "http"` |
+| 返回 `401 Unauthorized` | API Key 不匹配，或缺少 `Bearer ` 前缀 | 检查客户端 Header 与服务端启动参数是否一致 |
+| 返回 `connection refused` / 超时 | 网络不通 | 用 `curl <url>` 在客户端机器上测一下；检查防火墙 / 云安全组 |
+| SSH 断开后服务就停 | 前台进程随终端退出 | 使用 `systemd` 托管或 `nohup ... &` 后台化 |
+
+### Step 8 — 生产化（systemd 托管）
+
+前台运行方式只适合验证。生产环境用 systemd 托管，开机自启 + 崩溃自动重启：
+
+```ini
+# /etc/systemd/system/tencentos-mcp.service
+[Unit]
+Description=TencentOS MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment="TENCENTOS_MCP_API_KEY=a3f8e2d9c1b4f7e6d5c4b3a2..."
+ExecStart=/usr/local/bin/tencentos-mcp-server \
+  --transport streamable-http \
+  --host 0.0.0.0 \
+  --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now tencentos-mcp
+sudo systemctl status tencentos-mcp
+```
+
+### Step 9 — 公网部署必做（HTTPS + 反向代理）
+
+如果 MCP Server 要暴露到公网，**Bearer Token 在 HTTP 明文传输等于裸奔**，必须加 HTTPS。推荐用 Nginx 做反代：
+
+```nginx
+# /etc/nginx/conf.d/mcp.conf
+server {
+    listen 443 ssl http2;
+    server_name mcp.yourdomain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/mcp.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mcp.yourdomain.com/privkey.pem;
+
+    location /mcp {
+        proxy_pass http://127.0.0.1:8000/mcp;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+
+        # Streamable HTTP 长连接必需
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        proxy_set_header Connection "";
+    }
+}
+```
+
+此时服务端启动参数改为 `--host 127.0.0.1`（让 Nginx 作为唯一入口），客户端 `url` 改为 `https://mcp.yourdomain.com/mcp`。
+
 ## 🏗️ 架构
 
 ```
