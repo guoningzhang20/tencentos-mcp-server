@@ -1,13 +1,13 @@
 # TencentOS MCP Server — 验证报告
 
 > 验证时间：2026-04-17 14:27 UTC+8
-> 验证环境：TencentOS Server 4.4 / 175.27.214.100
+> 验证环境：TencentOS Server 4.4（腾讯云 CVM）
 
 ## 环境信息
 
 | 项目 | 值 |
 |------|-----|
-| **主机名** | VM-255-3-tencentos |
+| **主机名** | VM-xxx-tencentos（已脱敏） |
 | **OS** | TencentOS Server 4.4 |
 | **内核** | 6.6.117-45.4.tl4.x86_64 |
 | **CPU** | AMD EPYC 9K65 192-Core (1 核 2 线程) |
