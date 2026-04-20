@@ -122,6 +122,15 @@ class PatchDetail(BaseModel):
     cve_ids: list[str] = Field(default_factory=list)
     impact_level: str = ""  # 需重启系统 / 需重启服务 / 无需重启
     affected_services: list[str] = Field(default_factory=list)
+    # NEW v0.4: runtime-aware evidence
+    active_processes: list[dict] = Field(
+        default_factory=list,
+        description="进程级事实：当前正在加载该包 .so 文件的进程列表 [{pid, comm, service}]"
+    )
+    evidence: str = Field(
+        default="",
+        description="分级依据（事实来源）：说明为什么判为当前 impact_level"
+    )
     changelog_summary: str = ""
 
 
@@ -130,6 +139,15 @@ class ImpactSummary(BaseModel):
     requires_service_restart: int = 0
     no_restart_needed: int = 0
     affected_running_services: list[str] = Field(default_factory=list)
+    # NEW v0.4
+    runtime_scanned_processes: int = Field(
+        default=0,
+        description="本次扫描分析的运行进程总数"
+    )
+    runtime_pkg_map_available: bool = Field(
+        default=False,
+        description="是否成功构建了运行时包映射。False 表示降级到纯白名单模式"
+    )
 
 
 class PatchImpactReport(BaseModel):
