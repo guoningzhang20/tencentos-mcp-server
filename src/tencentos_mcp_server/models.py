@@ -242,6 +242,19 @@ class ComplianceStatus(BaseModel):
     failed_login_count: int = 0
     compliance_score: int = 0
     findings: list[str] = Field(default_factory=list)
+    # v0.5: 把分数翻译成客户能直接用的合规等级
+    compliance_level: str = Field(
+        default="unknown",
+        description="合规等级：excellent(≥90) / good(≥75) / warning(≥60) / non_compliant(<60)"
+    )
+    benchmark: str = Field(
+        default="",
+        description="参照基准：等保2.0三级 / CIS Benchmark（对企业客户的关键价值锚点）"
+    )
+    summary: str = Field(
+        default="",
+        description="一句话合规结论：面向合规官/安全审计员，直接可抄进报告"
+    )
 
 
 class AuditReport(BaseModel):
@@ -300,6 +313,16 @@ class OutdatedPackage(BaseModel):
 
 class CVEInfo(BaseModel):
     cve_id: str
+    # v0.5: dual severity fields
+    vendor_severity: str = Field(
+        default="Unknown",
+        description="厂商（TencentOS）定级：Critical / Important / Moderate / Low / Unknown"
+    )
+    cvss_score: float = Field(
+        default=0.0,
+        description="CVSS v3 分数（0.0-10.0），用于跨厂商可比排序。0.0 表示未知"
+    )
+    # 兼容旧字段（= vendor_severity 别名），避免破坏外部调用
     severity: str = "Unknown"
     description: str = ""
     affected_package: str = ""
@@ -314,6 +337,19 @@ class PatchGapReport(BaseModel):
     critical_outdated: int = 0
     outdated_packages: list[OutdatedPackage] = Field(default_factory=list)
     unfixed_cves: list[CVEInfo] = Field(default_factory=list)
+    # v0.5: demo 价值字段
+    top_risks: list[CVEInfo] = Field(
+        default_factory=list,
+        description="按 CVSS 降序排列的 Top 3 未修复高风险 CVE（销售/演示第一眼价值）"
+    )
+    cve_db_status: str = Field(
+        default="unknown",
+        description="CVE 数据库状态：loaded / partial / failed / unknown。透明化告知分析完整性"
+    )
+    cve_db_entries: int = Field(
+        default=0,
+        description="成功解析的 CVE 条数。0 表示数据库加载失败或为空"
+    )
 
 
 # ─────────────────────────────────────────────
@@ -329,6 +365,11 @@ class WorkloadProfile(BaseModel):
     disk_io_read_mbps: float = 0.0
     disk_io_write_mbps: float = 0.0
     description: str = ""
+    # v0.5: 是否采纳用户显式声明，避免自动检测误判
+    hint_applied: bool = Field(
+        default=False,
+        description="是否采用了 workload_hint 参数。True 表示跳过自动检测"
+    )
 
 
 class ParameterCheck(BaseModel):

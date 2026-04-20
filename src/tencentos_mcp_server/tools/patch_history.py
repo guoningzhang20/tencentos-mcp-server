@@ -135,30 +135,141 @@ def _parse_rpm_last(text: str) -> list[dict]:
     return entries
 
 
-def _fetch_cve_database() -> list[CVEInfo]:
-    """Fetch and parse TencentOS CVE database XML. Graceful on failure."""
-    try:
-        req = Request(CVE_DB_URL, headers={"User-Agent": "TencentOS-MCP-Server/0.1"})
-        with urlopen(req, timeout=10) as resp:
-            data = resp.read()
-        root = ET.fromstring(data)
+def _cvss_to_vendor_severity(cvss: float) -> str:
+    """CVSS 分数 → 厂商级别（当 vendor severity 缺失时兜底）。
 
-        cves: list[CVEInfo] = []
-        # Parse XML — structure may vary, try common patterns
-        for item in root.iter():
-            if "cve" in item.tag.lower():
-                cve_id = item.findtext("id", "") or item.get("id", "") or item.text or ""
-                if cve_id and cve_id.startswith("CVE-"):
-                    cves.append(CVEInfo(
-                        cve_id=cve_id,
-                        severity=item.findtext("severity", "Unknown") or "Unknown",
-                        description=item.findtext("description", "")[:200] or "",
-                        affected_package=item.findtext("package", "") or "",
-                        fixed_version=item.findtext("fixed_version", "") or "",
-                    ))
-        return cves
-    except (URLError, ET.ParseError, Exception):
-        return []
+    NVD/TencentOS 通用映射：
+      Critical ≥ 9.0 / Important ≥ 7.0 / Moderate ≥ 4.0 / Low > 0 / Unknown = 0
+    """
+    if cvss >= 9.0:
+        return "Critical"
+    if cvss >= 7.0:
+        return "Important"
+    if cvss >= 4.0:
+        return "Moderate"
+    if cvss > 0:
+        return "Low"
+    return "Unknown"
+
+
+def _normalize_cvss(raw: str) -> float:
+    """把 XML 里的 cvss 字段（可能是 '9.8' / 'CVSS:3.1/9.8' / '' ）转成 float。"""
+    if not raw:
+        return 0.0
+    # 提取第一个浮点数
+    m = re.search(r"(\d+\.\d+|\d+)", raw)
+    if not m:
+        return 0.0
+    try:
+        val = float(m.group(1))
+        # CVSS v3 最大 10
+        return max(0.0, min(10.0, val))
+    except ValueError:
+        return 0.0
+
+
+def _fetch_cve_database() -> tuple[list[CVEInfo], str, str]:
+    """Fetch and parse TencentOS errata XML.
+
+    Returns:
+        (cves, status, detail)
+        status ∈ {"loaded", "partial", "failed"}
+
+    实际 XML 结构（https://mirrors.tencent.com/tlinux/errata/cve.xml）:
+        <updates>
+          <update type="security">
+            <id>TSSA-2022:0001</id>
+            <severity>Moderate</severity>
+            <pkglist><package name="java-1.8.0-openjdk" .../></pkglist>
+            <description>
+              ... CVE-2021-35550: ... CVSS 3.1 Base Score 5.9 ...
+              ... CVE-2021-35556: ... CVSS 3.1 Base Score 3.7 ...
+            </description>
+          </update>
+          ...
+        </updates>
+
+    每个 <update> 可能包含多个 CVE（列在 description 里），我们把它展平成
+    独立的 CVEInfo 条目，共享 vendor severity 但分别抽取 CVSS 分数。
+    """
+    try:
+        req = Request(CVE_DB_URL, headers={"User-Agent": "TencentOS-MCP-Server/0.5"})
+        with urlopen(req, timeout=15) as resp:
+            data = resp.read()
+    except URLError as e:
+        return [], "failed", f"网络错误：{type(e).__name__}: {e}"
+    except Exception as e:  # noqa: BLE001
+        return [], "failed", f"下载 CVE XML 失败：{type(e).__name__}"
+
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as e:
+        return [], "failed", f"XML 解析失败：{e}"
+
+    updates = root.findall(".//update")
+    if not updates:
+        return [], "partial", "XML 结构异常：未找到 <update> 节点"
+
+    # 正则：从 description 抽取 CVE-YYYY-NNNN: ...... 段落
+    # 每段以 "CVE-xxxx-xxxx:" 开头，到下一个 CVE 开头或文本结束
+    cve_section_re = re.compile(
+        r"(CVE-\d{4}-\d{4,}):\s*(.*?)(?=CVE-\d{4}-\d{4,}:|$)",
+        re.DOTALL,
+    )
+    # CVSS 分数正则：CVSS[空白]3.x Base Score N.N
+    cvss_re = re.compile(r"CVSS[\s:.\dv]*Base Score\s*(\d+\.\d+)", re.IGNORECASE)
+
+    cves: list[CVEInfo] = []
+    errors = 0
+    for upd in updates:
+        try:
+            vendor_sev = (upd.findtext("severity", "") or "").strip().capitalize() or "Unknown"
+            description = upd.findtext("description", "") or ""
+            # 包名：取 pkglist/package/@name，可能多个
+            pkg_nodes = upd.findall(".//package")
+            pkg_names = [p.get("name", "") for p in pkg_nodes if p.get("name")]
+            primary_pkg = pkg_names[0] if pkg_names else ""
+            # 修复版本：package 节点上的 version
+            fixed_version = pkg_nodes[0].get("version", "") if pkg_nodes else ""
+
+            matched = False
+            for m in cve_section_re.finditer(description):
+                cve_id = m.group(1)
+                body = m.group(2)
+                cvss_m = cvss_re.search(body)
+                cvss_val = _normalize_cvss(cvss_m.group(1)) if cvss_m else 0.0
+                # vendor severity 缺失时用 CVSS 回推
+                sev = vendor_sev if vendor_sev != "Unknown" else _cvss_to_vendor_severity(cvss_val)
+
+                cves.append(CVEInfo(
+                    cve_id=cve_id,
+                    vendor_severity=sev,
+                    cvss_score=cvss_val,
+                    severity=sev,  # 兼容旧字段
+                    description=body.strip()[:200],
+                    affected_package=primary_pkg,
+                    fixed_version=fixed_version,
+                ))
+                matched = True
+
+            # 如果 description 里没抽到 CVE，但 advisory 本身是 security 类型，
+            # 至少保留一条以 TSSA id 为键的占位记录（避免丢 advisory）
+            if not matched:
+                tssa_id = upd.findtext("id", "") or ""
+                if tssa_id:
+                    # 不是 CVE 格式就跳过，保持"只存 CVE-*"的纯净
+                    pass
+        except Exception:  # noqa: BLE001
+            errors += 1
+            continue
+
+    status = "loaded"
+    if errors > 0 and errors >= len(updates) * 0.1:
+        status = "partial"
+    detail = f"解析 {len(updates)} 个 advisory，展平为 {len(cves)} 条 CVE"
+    if errors:
+        detail += f"，{errors} 条 advisory 解析失败"
+    return cves, status, detail
 
 
 def _parse_check_update_packages(text: str) -> list[OutdatedPackage]:
@@ -284,8 +395,8 @@ async def compare_patch_status() -> PatchGapReport:
                     elif "low" in severity:
                         pkg.severity = "Low"
 
-    # Fetch CVE database (best-effort)
-    cve_data = _fetch_cve_database()
+    # Fetch CVE database (best-effort) — v0.5: 带状态
+    cve_data, cve_status, cve_detail = _fetch_cve_database()
 
     # Cross-reference
     unfixed: list[CVEInfo] = []
@@ -297,6 +408,14 @@ async def compare_patch_status() -> PatchGapReport:
             for pkg in outdated:
                 if pkg.package_name == cve.affected_package:
                     pkg.related_cves.append(cve.cve_id)
+
+    # v0.5: Top 3 风险 —— 按 CVSS 降序，CVSS 为 0 的用 vendor_severity 兜底排序
+    severity_rank = {"Critical": 4, "Important": 3, "Moderate": 2, "Low": 1, "Unknown": 0}
+    top_risks = sorted(
+        unfixed,
+        key=lambda c: (c.cvss_score, severity_rank.get(c.vendor_severity, 0)),
+        reverse=True,
+    )[:3]
 
     # Detect latest kernel
     latest_kernel = ""
@@ -313,6 +432,9 @@ async def compare_patch_status() -> PatchGapReport:
         critical_outdated=sum(1 for p in outdated if p.severity in ("Critical", "Important")),
         outdated_packages=outdated[:50],
         unfixed_cves=unfixed[:30],
+        top_risks=top_risks,
+        cve_db_status=cve_status,
+        cve_db_entries=len(cve_data),
     )
 
 

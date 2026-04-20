@@ -63,6 +63,19 @@ def _parse_psi(text: str) -> str:
     return text.strip().split("\n")[0][:80]
 
 
+def _psi_avg10_value(psi_summary: str) -> float:
+    """从 _parse_psi 的输出里抽 avg10 数值。拿不到返回 0。"""
+    if not psi_summary or psi_summary == "N/A":
+        return 0.0
+    m = re.search(r"avg10=([\d.]+)", psi_summary)
+    if m:
+        try:
+            return float(m.group(1))
+        except ValueError:
+            return 0.0
+    return 0.0
+
+
 def _parse_error_lines(text: str, source: str) -> list[ErrorEvent]:
     """Parse journal/dmesg output lines into ErrorEvent list, aggregating duplicates."""
     events: list[ErrorEvent] = []
@@ -204,6 +217,42 @@ def _detect_problems(
                 detail=f"最近时间窗口内，{unit} 产生了 {count} 条错误日志",
                 evidence=[e.message[:100] for e in journal_errors if e.unit == unit][:3],
                 suggested_fix=f"查看详细日志: journalctl -u {unit} -p err -n 50 --no-pager",
+            ))
+
+    # 7. v0.5: PSI (Pressure Stall Information) — TencentOS 内核增强卖点
+    # PSI avg10 是现代 Linux 衡量资源饥饿的标准指标，比 load average 准确
+    for resource, psi_str in (
+        ("cpu", pressure.cpu_pressure),
+        ("memory", pressure.memory_pressure),
+        ("io", pressure.io_pressure),
+    ):
+        avg10 = _psi_avg10_value(psi_str)
+        if avg10 >= 20:
+            problems.append(Problem(
+                severity="critical",
+                category=resource,
+                title=f"{resource.upper()} PSI 压力极高：avg10={avg10}%",
+                detail=(
+                    f"PSI (Pressure Stall Information) 显示过去 10 秒有 {avg10}% 的时间"
+                    f"进程在等待 {resource} 资源。超过 20% 意味着严重资源饥饿"
+                ),
+                evidence=[f"/proc/pressure/{resource}: {psi_str}"],
+                suggested_fix=(
+                    f"用 `cat /proc/pressure/{resource}` 看具体数值；"
+                    f"用 top/iostat/ss 定位占用 {resource} 最多的进程"
+                ),
+            ))
+        elif avg10 >= 10:
+            problems.append(Problem(
+                severity="warning",
+                category=resource,
+                title=f"{resource.upper()} PSI 压力偏高：avg10={avg10}%",
+                detail=(
+                    f"PSI 显示过去 10 秒有 {avg10}% 的时间进程在等 {resource}。"
+                    f"比 load average 更准确的资源饥饿信号"
+                ),
+                evidence=[f"/proc/pressure/{resource}: {psi_str}"],
+                suggested_fix=f"持续观察 `watch -n1 cat /proc/pressure/{resource}` 的趋势",
             ))
 
     # Sort by severity

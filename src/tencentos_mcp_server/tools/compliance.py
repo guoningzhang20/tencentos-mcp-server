@@ -29,6 +29,36 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _score_to_level(score: int) -> tuple[str, str, str]:
+    """合规分数 → (level, benchmark_label, summary)。
+
+    对照基准：等保2.0三级（GB/T 22239-2019）。分数来自 audit/access 控制项核查。
+    """
+    if score >= 90:
+        return (
+            "excellent",
+            "等保2.0三级 — 基线全达标",
+            "✅ 符合等保三级要求，合规基线全部达标，可直接提交等保测评",
+        )
+    if score >= 75:
+        return (
+            "good",
+            "等保2.0三级 — 基线达标，建议加固",
+            "⚠️ 合规基线达标，但存在可优化项。建议按 findings 列表加固后再提交等保测评",
+        )
+    if score >= 60:
+        return (
+            "warning",
+            "等保2.0三级 — 部分不达标",
+            "⚠️⚠️ 存在不符合等保三级的配置项，建议整改后申请等保测评",
+        )
+    return (
+        "non_compliant",
+        "等保2.0三级 — 不达标",
+        "❌ 不符合等保三级要求，存在严重合规风险。findings 列表中的项目必须整改",
+    )
+
+
 def _classify_risk(action_type: str, detail: str) -> str:
     """Classify risk level of an operation."""
     detail_lower = detail.lower()
@@ -237,6 +267,9 @@ async def _check_compliance_impl() -> ComplianceStatus:
     if not findings:
         findings.append("✅ 所有检查项均合规")
 
+    final_score = max(0, score)
+    level, benchmark, summary = _score_to_level(final_score)
+
     return ComplianceStatus(
         auditd_enabled=auditd_active,
         audit_rules_loaded=rules_count,
@@ -244,8 +277,11 @@ async def _check_compliance_impl() -> ComplianceStatus:
         ssh_root_login=ssh_root or "not configured",
         sudo_logging=sudo_logging,
         failed_login_count=failed_login_count,
-        compliance_score=max(0, score),
+        compliance_score=final_score,
         findings=findings,
+        compliance_level=level,
+        benchmark=benchmark,
+        summary=summary,
     )
 
 
@@ -276,7 +312,18 @@ async def audit_operations(days: int = 7) -> AuditReport:
     sudo_logs = await run_cmd(
         f'journalctl _COMM=sudo --since "{days} days ago" --no-pager -n 200 2>/dev/null || echo ""'
     )
-    secure_log = await run_cmd("tail -500 /var/log/secure 2>/dev/null || echo ''")
+    # v0.5: 改用 journalctl _COMM=sshd 按时间取，而不是 tail -500 覆盖面不确定。
+    # 回退链：journalctl(systemd 系统) → /var/log/secure（传统 rsyslog，仍用时间 since，不用 tail）
+    secure_log = await run_cmd(
+        f'journalctl _COMM=sshd --since "{days} days ago" --no-pager 2>/dev/null '
+        f'| head -2000'
+    )
+    if not secure_log.stdout.strip():
+        # 回退到 rsyslog 文件（不再 tail -500，用 since 时间过滤）
+        secure_log = await run_cmd(
+            f"awk -v cutoff=\"$(date -d '{days} days ago' '+%s' 2>/dev/null || echo 0)\" "
+            f"'{{print}}' /var/log/secure 2>/dev/null | tail -2000 || echo ''"
+        )
 
     # Parse all sources
     all_ops: list[AuditEntry] = []
